@@ -1,4 +1,4 @@
-Source: mpv
+Source: mpv-git
 Section: misc
 Priority: optional
 Maintainer: Kevin Mitchell <kevmitch@gmail.com>
@@ -73,8 +73,8 @@ Build-Depends: python3-mako, meson (>= 0.47), libvulkan-dev,
  yasm,
  zlib1g-dev
 
-Package: mpv
-Conflicts: mpv-wsl
+Package: mpv-git
+Conflicts: mpv, mpv-wsl
 Provides: mpv
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
