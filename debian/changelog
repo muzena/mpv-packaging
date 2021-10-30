@@ -1,0 +1,5 @@
+mpv (2021.08.06+7eb34d2+wsl.1) unstable; urgency=medium
+
+  * local build with fribidi 1:1.0.10, libass 2:2021.07.10+5733e1c, libaom 2:2021.08.05+e9187e3, mujs 2:2021.07.23+8220615, shaderc 2:2021.07.22+fadb0ed, ffmpeg 2:2021.08.05+ef54590, libplacebo 2:2021.08.05+0d65b14
+
+ -- Wessel Dankers <wsl@fruit.je>  Fri, 06 Aug 2021 13:46:26 +0200

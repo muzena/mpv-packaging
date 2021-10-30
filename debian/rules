@@ -1,0 +1,158 @@
+#! /usr/bin/make -f
+
+# To enable parallel building:
+# You can either set DEB_BUILD_OPTIONS=parallel=<num-procs> in your build environment
+# or provide the -j<numprocs> option to debuild or dpkg-buildpackage, which
+# amounts to the same thing.
+parallel=$(filter parallel=%,$(DEB_BUILD_OPTIONS))
+ifeq (,$(parallel))
+	NINJAFLAGS += -j1
+else
+	NUMJOBS = $(patsubst parallel=%,%,$(parallel))
+    # use MFLAGS, rather than MAKEFLAGS as the latter is used by make internally
+	MFLAGS += -j$(NUMJOBS)
+	NINJAFLAGS += -j$(NUMJOBS)
+	WAFFLAGS += -j$(NUMJOBS)
+endif
+
+# make .PHONY all the targets that have name collisions with the scripts
+# see http://www.debian.org/doc/manuals/maint-guide/dreq.en.html#rules
+.PHONY: clean build install
+# The above isn't enough because of the "%" target. Make the problematic targets explicit:
+clean build install:
+	exec dh $@
+# Handle all other targets in the usual way.
+%:
+	exec dh $@
+
+projects := $(shell ./get-config -- config_projects)
+projects_build := $(patsubst %,%_build,$(projects))
+
+mujs_config:
+	./build --mode=config mujs
+
+mujs_build: mujs_config
+	./build --mode=build mujs -- $(MFLAGS)
+
+shaderc_config:
+	./build --mode=config shaderc
+
+shaderc_build: shaderc_config
+	./build --mode=build shaderc -- $(NINJAFLAGS)
+
+crossc_config:
+	./build --mode=config crossc
+
+crossc_build: crossc_config
+	./build --mode=build crossc -- $(MFLAGS)
+
+fribidi_config:
+	./build --mode=config fribidi
+
+fribidi_build: fribidi_config
+	./build --mode=build fribidi -- $(MFLAGS)
+
+libass_config: $(filter fribidi_build,$(projects_build))
+	./build --mode=config libass
+
+libass_build: libass_config
+	./build --mode=build libass -- $(MFLAGS)
+
+libaom_config:
+	./build --mode=config libaom
+
+libaom_build: libaom_config
+	./build --mode=build libaom -- $(MFLAGS)
+
+libplacebo_config: $(filter shaderc_build,$(projects_build))
+	./build --mode=config libplacebo
+
+libplacebo_build: libplacebo_config
+	./build --mode=build libplacebo -- $(NINJAFLAGS)
+
+# depend on libass_build in case the user specified --enable-libass in ffmpeg_options
+ffmpeg_config: $(filter libass_build libaom_build,$(projects_build))
+	./build --mode=config ffmpeg -- \
+		--enable-gnutls \
+		--enable-libgme \
+		--enable-libgsm \
+		--enable-libmodplug \
+		--enable-libmp3lame \
+		--enable-libopus \
+		--enable-libpulse \
+		--enable-libsoxr \
+		--enable-libspeex \
+		--enable-libssh \
+		--enable-libtheora \
+		--enable-libtwolame \
+		--enable-libvorbis \
+		--enable-libvpx \
+		--enable-ladspa \
+		--enable-libbs2b \
+		--enable-gpl --enable-libxvid --enable-libx264 \
+		--enable-version3 --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libvo-amrwbenc
+
+ffmpeg_build: ffmpeg_config
+	./build --mode=build ffmpeg -- $(MFLAGS)
+
+# put the config in the right place and drop the local/ since it's package managed now
+override_dh_auto_configure: $(filter-out mpv_build,$(projects_build))
+	./build --mode=config mpv -- \
+		--prefix=/usr \
+		--confdir=/etc/mpv \
+		--zshdir=/usr/share/zsh/vendor-completions \
+		--enable-openal \
+		--enable-dvdnav \
+		--enable-cdda
+
+override_dh_auto_build:
+	./build --mode=build mpv -- $(WAFLAGS)
+
+MPV_SRC=$(shell ./get-config -- config_mpv_source)
+BUILD_ROOT=$(shell pwd)
+
+DOCSOURCE=$(MPV_SRC)/DOCS
+TOOLSSOURCE=$(MPV_SRC)/TOOLS
+DOCDEST=debian/mpv-git/usr/share/doc/mpv
+TOOLSDEST=$(DOCDEST)/TOOLS
+# call waf to install to the debian packageing dir
+override_dh_auto_install:
+	./install mpv -- -v --destdir="$(BUILD_ROOT)/debian/mpv-git"
+
+	find "$(DOCSOURCE)" -mindepth 1 -type d \
+	-not -regex '.*man.*' \
+	-not -regex '.*client_api_examples.*' \
+	-printf "%P\0" | \
+	xargs -0i /usr/bin/install -d "$(DOCDEST)/{}"
+
+	find "$(DOCSOURCE)" -mindepth 1 -type f \
+	-not -regex '.*man.*' \
+	-not -regex '.*client_api_examples.*' \
+	-not -name 'tech-overview.txt' \
+	-not -name 'waf-buildsystem.rst' \
+	-not -name 'crosscompile-mingw.md' \
+	-not -name 'coding-style.md' \
+	-printf "%P\0" | \
+	xargs -0i /usr/bin/install -m644 "$(DOCSOURCE)/{}" "$(DOCDEST)/{}"
+
+	find "$(TOOLSSOURCE)" -mindepth 1 -type d \
+	-not -regex '.*osxbundle.*' \
+	-printf "%P\0" | \
+	xargs -0i /usr/bin/install -d "$(TOOLSDEST)/{}"
+
+	find "$(TOOLSSOURCE)" -mindepth 1 -type f \
+	-not -regex '.*osxbundle.*' \
+	-not -name 'gen-x11-icon.sh' \
+	-not -name 'file2string.pl' \
+	-not -name 'uncrustify.cfg' \
+	-not -name '*.pyc' \
+	-printf "%P\0" | \
+	xargs -0i /usr/bin/install -m644 "$(TOOLSSOURCE)/{}" "$(TOOLSDEST)/{}"
+
+# for manually installed dependencies
+override_dh_shlibdeps:
+	dh_shlibdeps --dpkg-shlibdeps-params=--ignore-missing-info
+
+# call all the cleans
+override_dh_auto_clean:
+	./clean
